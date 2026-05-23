@@ -1,0 +1,41 @@
+[project]
+name = "offerlens"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "DavidGola",email = "david-gola@outlook.fr"}
+]
+readme = "README.md"
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "pydantic-settings (>=2.14.1,<3.0.0)",
+    "langchain (>=1.3.1,<2.0.0)",
+    "langchain-anthropic (>=1.4.3,<2.0.0)",
+    "langchain-openai (>=1.2.2,<2.0.0)",
+    "langchain-google-vertexai (>=3.2.3,<4.0.0)",
+    "langchain-community (>=0.4.2,<0.5.0)",
+    "langsmith (>=0.8.5,<0.9.0)",
+    "google-cloud-firestore (>=2.27.0,<3.0.0)",
+    "google-api-python-client (>=2.196.0,<3.0.0)",
+    "google-auth-oauthlib (>=1.4.0,<2.0.0)",
+    "typer (>=0.25.1,<0.26.0)",
+    "httpx (>=0.28.1,<0.29.0)",
+    "pypdf (>=6.12.1,<7.0.0)",
+    "python-dotenv (>=1.2.2,<2.0.0)",
+    "rich (>=15.0.0,<16.0.0)",
+    "langchain-text-splitters (>=1.1.2,<2.0.0)",
+    "google-genai (>=2.6.0,<3.0.0)",
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "pytest (>=9.0.3,<10.0.0)",
+    "pytest-asyncio (>=1.3.0,<2.0.0)",
+    "ruff (>=0.15.14,<0.16.0)",
+    "mypy (>=2.1.0,<3.0.0)"
+]

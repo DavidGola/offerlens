@@ -1,5 +1,29 @@
-docs/
+# Secrets
+.env
+*.json
+!pyproject.toml
 
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+.venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
 
-# CLAUDE FILES
+# GCP credentials (local dev)
+*-sa-key.json
+token.json
+application_default_credentials.json
+
+# Claude Code
 CLAUDE.md
+cmd.txt
+
+# CV
+cv/
+
+# docs
+docs/
