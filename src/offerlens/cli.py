@@ -24,49 +24,54 @@ def ingest_cv(path: Annotated[Path, typer.Argument(help="Chemin vers le CV en PD
 
 
 def _run_scan(
-    source: str = "remotive",
+    source: Optional[str] = None,
     query: str = "python backend",
     limit: int = 20,
-    url: Optional[str] = None,
     freshness: Optional[str] = None,
-) -> None:
+) -> list[str]:
+    """Scanne toutes les sources configurées et retourne les warnings."""
     from offerlens.pipeline.scoring import score_offer
-    from offerlens.sources.base import filter_by_freshness
-    from offerlens.sources.remotive import RemotiveAdapter
-    from offerlens.sources.url_fetch import URLFetchAdapter
+    from offerlens.sources.base import dedup_offers, filter_by_freshness
+    from offerlens.sources.registry import get_sources
     from offerlens.storage.firestore import purge_old_offers
 
     purge_old_offers()
 
-    if url:
-        with console.status(f"Récupération de l'offre depuis {url}..."):
-            offer = URLFetchAdapter().fetch_by_url(url)
-        offers = [offer]
-    elif source == "remotive":
-        with console.status(f"Recherche Remotive : '{query}' (limit={limit})..."):
-            offers = RemotiveAdapter().search(query, limit=limit)
-    else:
-        console.print(f"[red]Source inconnue : {source}[/red]")
-        raise typer.Exit(1)
+    adapters = get_sources(source_filter=source)
+    all_offers = []
+    warnings: list[str] = []
+
+    for adapter in adapters:
+        name = adapter.__class__.__name__.replace("Adapter", "").lower()
+        try:
+            with console.status(f"Recherche {name} : '{query}' (limit={limit})..."):
+                offers = adapter.search(query, limit=limit)
+            all_offers.extend(offers)
+        except Exception as e:
+            console.print(f"[yellow]⚠ {name} indisponible : {e}[/yellow]")
+            warnings.append(f"{name} indisponible lors du scan ({type(e).__name__})")
+
+    all_offers = dedup_offers(all_offers)
 
     if freshness:
         try:
-            offers = filter_by_freshness(offers, freshness)
+            all_offers = filter_by_freshness(all_offers, freshness)
         except ValueError as e:
             console.print(f"[red]{e}[/red]")
             raise typer.Exit(1)
         console.print(
-            f"[dim]{len(offers)} offre(s) après filtre fraîcheur ({freshness}).[/dim]"
+            f"[dim]{len(all_offers)} offre(s) après filtre fraîcheur ({freshness}).[/dim]"
         )
 
-    table = Table(title=f"Top offres — {source}", show_lines=True)
+    table = Table(title=f"Top offres — {source or 'toutes sources'}", show_lines=True)
     table.add_column("Score", justify="center", width=7)
     table.add_column("Titre", min_width=30)
     table.add_column("Entreprise", min_width=20)
+    table.add_column("Source", width=14)
     table.add_column("Matched skills", min_width=30)
 
     results = []
-    for offer in offers:
+    for offer in all_offers:
         with console.status(f"Scoring : {offer.title[:50]}..."):
             result = score_offer(offer)
         if result is not None:
@@ -81,6 +86,7 @@ def _run_scan(
             f"[{color}]{score}/5[/{color}]",
             result.offer.title,
             result.offer.company,
+            result.offer.source,
             ", ".join(result.job_score.matched_skills[:3]),
         )
 
@@ -88,9 +94,10 @@ def _run_scan(
     console.print(
         f"\n[dim]{len(results)} offres scorées, {len(results)} sauvegardées dans Firestore.[/dim]"
     )
+    return warnings
 
 
-def _run_digest() -> None:
+def _run_digest(warnings: Optional[list[str]] = None) -> None:
     from offerlens.notify.gmail import send_digest
     from offerlens.pipeline.scoring import JobScore, ScoredOffer
     from offerlens.sources.base import RawOffer
@@ -125,7 +132,7 @@ def _run_digest() -> None:
         scored.append(ScoredOffer(offer=offer, job_score=job_score, offer_id=o["id"]))
 
     with console.status("Envoi du digest Gmail..."):
-        send_digest(scored, total_today=total_today)
+        send_digest(scored, total_today=total_today, warnings=warnings or [])
 
     console.print(
         f"[green]✓[/green] Digest envoyé — {len(scored)} offres sur {total_today} scorées."
@@ -134,18 +141,17 @@ def _run_digest() -> None:
 
 @app.command()
 def scan(
-    source: Annotated[str, typer.Option(help="Source : remotive")] = "remotive",
-    query: Annotated[str, typer.Option(help="Requête de recherche")] = "python backend",
-    limit: Annotated[int, typer.Option(help="Nombre max d'offres à scorer")] = 20,
-    url: Annotated[
-        Optional[str], typer.Option(help="URL unique à scorer (mode paste)")
+    source: Annotated[
+        Optional[str], typer.Option(help="Source unique : remotive, adzuna, francetravail")
     ] = None,
+    query: Annotated[str, typer.Option(help="Requête de recherche")] = "python backend",
+    limit: Annotated[int, typer.Option(help="Nombre max d'offres à scorer par source")] = 20,
     freshness: Annotated[
         Optional[str], typer.Option(help="Fenêtre de fraîcheur : 24h, 7d, 30d")
     ] = None,
 ):
-    """Scanne et score des offres d'emploi."""
-    _run_scan(source=source, query=query, limit=limit, url=url, freshness=freshness)
+    """Scanne et score des offres d'emploi (toutes les sources par défaut)."""
+    _run_scan(source=source, query=query, limit=limit, freshness=freshness)
 
 
 @app.command()
@@ -156,9 +162,11 @@ def digest():
 
 @app.command()
 def run_pipeline(
-    source: Annotated[str, typer.Option(help="Source : remotive")] = "remotive",
+    source: Annotated[
+        Optional[str], typer.Option(help="Source unique : remotive, adzuna, francetravail")
+    ] = None,
     query: Annotated[str, typer.Option(help="Requête de recherche")] = "python backend",
-    limit: Annotated[int, typer.Option(help="Nombre max d'offres à scorer")] = 20,
+    limit: Annotated[int, typer.Option(help="Nombre max d'offres à scorer par source")] = 20,
     freshness: Annotated[
         Optional[str], typer.Option(help="Fenêtre de fraîcheur : 24h, 7d, 30d")
     ] = None,
@@ -166,14 +174,15 @@ def run_pipeline(
     """Exécute le pipeline complet : scan → digest. Envoie un mail d'erreur en cas d'échec."""
     from offerlens.notify.gmail import send_error_email
 
+    warnings: list[str] = []
     try:
-        _run_scan(source=source, query=query, limit=limit, freshness=freshness)
+        warnings = _run_scan(source=source, query=query, limit=limit, freshness=freshness)
     except Exception as e:
         send_error_email(e)
         raise
 
     try:
-        _run_digest()
+        _run_digest(warnings=warnings)
     except Exception as e:
         send_error_email(e)
         raise

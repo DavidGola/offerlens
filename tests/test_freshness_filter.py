@@ -96,13 +96,14 @@ runner = CliRunner()
 def test_scan_freshness_filters_before_scoring():
     """--freshness filtre les offres périmées avant l'appel à score_offer."""
     stale = _offer(_now() - timedelta(days=5), title="Stale Offer")
+    mock_adapter = MagicMock()
+    mock_adapter.search.return_value = [stale]
 
     with (
-        patch("offerlens.sources.remotive.RemotiveAdapter") as MockAdapter,
+        patch("offerlens.sources.registry.get_sources", return_value=[mock_adapter]),
         patch("offerlens.pipeline.scoring.score_offer") as mock_score,
         patch("offerlens.storage.firestore.purge_old_offers"),
     ):
-        MockAdapter.return_value.search.return_value = [stale]
         result = runner.invoke(app, ["scan", "--freshness", "24h"])
 
     mock_score.assert_not_called()
@@ -116,13 +117,14 @@ def test_scan_freshness_passes_fresh_offer_to_scoring():
     mock_scored.job_score.score = 3
     mock_scored.offer = fresh
     mock_scored.job_score.matched_skills = []
+    mock_adapter = MagicMock()
+    mock_adapter.search.return_value = [fresh]
 
     with (
-        patch("offerlens.sources.remotive.RemotiveAdapter") as MockAdapter,
+        patch("offerlens.sources.registry.get_sources", return_value=[mock_adapter]),
         patch("offerlens.pipeline.scoring.score_offer", return_value=mock_scored) as mock_score,
         patch("offerlens.storage.firestore.purge_old_offers"),
     ):
-        MockAdapter.return_value.search.return_value = [fresh]
         result = runner.invoke(app, ["scan", "--freshness", "24h"])
 
     mock_score.assert_called_once_with(fresh)

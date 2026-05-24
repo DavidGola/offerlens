@@ -1,5 +1,6 @@
 """Interface JobSourceAdapter (Protocol) et modèle RawOffer (Pydantic)."""
 
+import hashlib
 from datetime import datetime, timedelta, timezone
 from typing import Protocol, runtime_checkable
 
@@ -35,7 +36,20 @@ def filter_by_freshness(offers: list[RawOffer], freshness: str) -> list[RawOffer
     ]
 
 
+def dedup_offers(offers: list[RawOffer]) -> list[RawOffer]:
+    """Dédoublonne par hash sha256(normalize(title) + normalize(company)). First wins."""
+    seen: set[str] = set()
+    result: list[RawOffer] = []
+    for offer in offers:
+        key = hashlib.sha256(
+            (offer.title.lower().strip() + offer.company.lower().strip()).encode()
+        ).hexdigest()
+        if key not in seen:
+            seen.add(key)
+            result.append(offer)
+    return result
+
+
 @runtime_checkable
 class JobSourceAdapter(Protocol):
     def search(self, query: str, limit: int = 50) -> list[RawOffer]: ...
-    def fetch_by_url(self, url: str) -> RawOffer: ...

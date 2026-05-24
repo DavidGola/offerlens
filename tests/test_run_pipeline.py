@@ -116,8 +116,9 @@ def test_run_pipeline_calls_scan_then_digest():
 
     def fake_scan(*args, **kwargs):
         call_order.append("scan")
+        return []
 
-    def fake_digest():
+    def fake_digest(*args, **kwargs):
         call_order.append("digest")
 
     with (
