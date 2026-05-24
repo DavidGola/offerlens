@@ -69,9 +69,7 @@ def score_offer(offer: RawOffer) -> ScoredOffer:
         "matched_skills": job_score.matched_skills,
         "missing_skills": job_score.missing_skills,
         "red_flags": job_score.red_flags,
-        "status": "new",
         "scanned_at": datetime.now(timezone.utc),
-        "seen_at": None,
     }
     offer_id = save_scored_offer(offer_data)
 

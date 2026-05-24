@@ -36,22 +36,12 @@ def save_scored_offer(offer_data: dict) -> str:
 
 
 def get_top_offers(limit: int = 5) -> list[dict]:
-    """Retourne les `limit` meilleures offres non vues, triées par score décroissant."""
+    """Retourne les `limit` meilleures offres triées par score décroissant."""
     db = get_client()
     docs = (
         db.collection("offers")
-        .where("status", "==", "new")
-        .where("seen_at", "==", None)
         .order_by("score", direction=firestore.Query.DESCENDING)
         .limit(limit)
         .get()
     )
     return [{"id": doc.id, **doc.to_dict()} for doc in docs]
-
-
-def mark_offers_seen(offer_ids: list[str]) -> None:
-    """Marque les offres comme vues."""
-    from datetime import datetime, timezone
-    db = get_client()
-    for offer_id in offer_ids:
-        db.collection("offers").document(offer_id).update({"seen_at": datetime.now(timezone.utc)})
