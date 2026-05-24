@@ -7,7 +7,9 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-app = typer.Typer(name="offerlens", help="Lentille intelligente sur les offres d'emploi.")
+app = typer.Typer(
+    name="offerlens", help="Lentille intelligente sur les offres d'emploi."
+)
 console = Console()
 
 
@@ -21,15 +23,13 @@ def ingest_cv(path: Annotated[Path, typer.Argument(help="Chemin vers le CV en PD
     console.print(f"[green]✓[/green] {n} chunks ingérés dans Firestore.")
 
 
-@app.command()
-def scan(
-    source: Annotated[str, typer.Option(help="Source : remotive")] = "remotive",
-    query: Annotated[str, typer.Option(help="Requête de recherche")] = "python backend",
-    limit: Annotated[int, typer.Option(help="Nombre max d'offres à scorer")] = 20,
-    url: Annotated[Optional[str], typer.Option(help="URL unique à scorer (mode paste)")] = None,
-    freshness: Annotated[Optional[str], typer.Option(help="Fenêtre de fraîcheur : 24h, 7d, 30d")] = None,
-):
-    """Scanne et score des offres d'emploi."""
+def _run_scan(
+    source: str = "remotive",
+    query: str = "python backend",
+    limit: int = 20,
+    url: Optional[str] = None,
+    freshness: Optional[str] = None,
+) -> None:
     from offerlens.pipeline.scoring import score_offer
     from offerlens.sources.base import filter_by_freshness
     from offerlens.sources.remotive import RemotiveAdapter
@@ -55,7 +55,9 @@ def scan(
         except ValueError as e:
             console.print(f"[red]{e}[/red]")
             raise typer.Exit(1)
-        console.print(f"[dim]{len(offers)} offre(s) après filtre fraîcheur ({freshness}).[/dim]")
+        console.print(
+            f"[dim]{len(offers)} offre(s) après filtre fraîcheur ({freshness}).[/dim]"
+        )
 
     table = Table(title=f"Top offres — {source}", show_lines=True)
     table.add_column("Score", justify="center", width=7)
@@ -82,12 +84,12 @@ def scan(
         )
 
     console.print(table)
-    console.print(f"\n[dim]{len(results)} offres scorées, {len(results)} sauvegardées dans Firestore.[/dim]")
+    console.print(
+        f"\n[dim]{len(results)} offres scorées, {len(results)} sauvegardées dans Firestore.[/dim]"
+    )
 
 
-@app.command()
-def digest():
-    """Génère et envoie le digest email top 5 du jour."""
+def _run_digest() -> None:
     from offerlens.notify.gmail import send_digest
     from offerlens.pipeline.scoring import JobScore, ScoredOffer
     from offerlens.sources.base import RawOffer
@@ -99,7 +101,7 @@ def digest():
 
     if not raw_offers:
         console.print("[yellow]Aucune offre nouvelle à envoyer.[/yellow]")
-        raise typer.Exit(0)
+        return
 
     scored = []
     for o in raw_offers:
@@ -124,11 +126,62 @@ def digest():
     with console.status("Envoi du digest Gmail..."):
         send_digest(scored, total_today=total_today)
 
-    console.print(f"[green]✓[/green] Digest envoyé — {len(scored)} offres sur {total_today} scorées.")
+    console.print(
+        f"[green]✓[/green] Digest envoyé — {len(scored)} offres sur {total_today} scorées."
+    )
 
 
 @app.command()
-def eval(dataset: Annotated[str, typer.Option(help="Nom du dataset LangSmith")] = "golden"):
+def scan(
+    source: Annotated[str, typer.Option(help="Source : remotive")] = "remotive",
+    query: Annotated[str, typer.Option(help="Requête de recherche")] = "python backend",
+    limit: Annotated[int, typer.Option(help="Nombre max d'offres à scorer")] = 20,
+    url: Annotated[
+        Optional[str], typer.Option(help="URL unique à scorer (mode paste)")
+    ] = None,
+    freshness: Annotated[
+        Optional[str], typer.Option(help="Fenêtre de fraîcheur : 24h, 7d, 30d")
+    ] = None,
+):
+    """Scanne et score des offres d'emploi."""
+    _run_scan(source=source, query=query, limit=limit, url=url, freshness=freshness)
+
+
+@app.command()
+def digest():
+    """Génère et envoie le digest email top 5 du jour."""
+    _run_digest()
+
+
+@app.command()
+def run_pipeline(
+    source: Annotated[str, typer.Option(help="Source : remotive")] = "remotive",
+    query: Annotated[str, typer.Option(help="Requête de recherche")] = "python backend",
+    limit: Annotated[int, typer.Option(help="Nombre max d'offres à scorer")] = 20,
+    freshness: Annotated[
+        Optional[str], typer.Option(help="Fenêtre de fraîcheur : 24h, 7d, 30d")
+    ] = None,
+):
+    """Exécute le pipeline complet : scan → digest. Envoie un mail d'erreur en cas d'échec."""
+    from offerlens.notify.gmail import send_error_email
+
+    try:
+        _run_scan(source=source, query=query, limit=limit, freshness=freshness)
+    except Exception as e:
+        send_error_email(e)
+        raise
+
+    try:
+        _run_digest()
+    except Exception as e:
+        send_error_email(e)
+        raise
+
+
+@app.command()
+def eval(
+    dataset: Annotated[str, typer.Option(help="Nom du dataset LangSmith")] = "golden",
+):
     """Lance l'évaluation sur le golden set LangSmith."""
     console.print("[yellow]Eval — non implémenté (étape 10).[/yellow]")
 
