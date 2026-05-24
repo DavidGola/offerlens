@@ -88,7 +88,7 @@ def digest():
     from offerlens.notify.gmail import send_digest
     from offerlens.pipeline.scoring import JobScore, ScoredOffer
     from offerlens.sources.base import RawOffer
-    from offerlens.storage.firestore import get_top_offers, mark_offers_seen
+    from offerlens.storage.firestore import get_top_offers
 
     with console.status("Récupération des meilleures offres..."):
         raw_offers = get_top_offers(limit=5)
@@ -118,7 +118,6 @@ def digest():
 
     with console.status("Envoi du digest Gmail..."):
         send_digest(scored)
-        mark_offers_seen([s.offer_id for s in scored])
 
     console.print(f"[green]✓[/green] Digest envoyé — {len(scored)} offres.")
 
