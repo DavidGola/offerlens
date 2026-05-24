@@ -1,10 +1,17 @@
 """Client Firestore et repositories — cv_chunks, offers, scan_runs, preferences."""
 
+import hashlib
+
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
 from google.cloud.firestore_v1.vector import Vector
 
 from offerlens.config import settings
+
+
+def _offer_doc_id(source: str, url: str) -> str:
+    """Retourne un ID déterministe sha256(source + url)[:16]."""
+    return hashlib.sha256(f"{source}{url}".encode()).hexdigest()[:16]
 
 
 def get_client() -> firestore.Client:
@@ -27,10 +34,17 @@ def search_cv_chunks(query_embedding: list[float], limit: int = 5) -> list[str]:
     return [doc.to_dict().get("content", "") for doc in results]
 
 
-def save_scored_offer(offer_data: dict) -> str:
-    """Persiste une offre scorée dans Firestore. Retourne l'ID du document."""
+def save_scored_offer(offer_data: dict, source: str = "", url: str = "") -> str:
+    """Persiste une offre scorée dans Firestore. Retourne l'ID du document.
+
+    Si source et url sont fournis, l'ID est déterministe (sha256(source+url)[:16]).
+    Si le document existe déjà, l'écriture est ignorée (skip) et l'ID existant est retourné.
+    """
     db = get_client()
-    ref = db.collection("offers").document()
+    doc_id = _offer_doc_id(source, url) if source and url else None
+    ref = db.collection("offers").document(doc_id)
+    if ref.get().exists:
+        return ref.id
     ref.set(offer_data)
     return ref.id
 

@@ -71,6 +71,6 @@ def score_offer(offer: RawOffer) -> ScoredOffer:
         "red_flags": job_score.red_flags,
         "scanned_at": datetime.now(timezone.utc),
     }
-    offer_id = save_scored_offer(offer_data)
+    offer_id = save_scored_offer(offer_data, source=offer.source, url=offer.url)
 
     return ScoredOffer(offer=offer, job_score=job_score, offer_id=offer_id)
