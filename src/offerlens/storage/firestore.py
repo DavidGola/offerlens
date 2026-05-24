@@ -49,6 +49,16 @@ def get_top_offers(limit: int = 5) -> list[dict]:
     return [{"id": doc.id, **doc.to_dict()} for doc in docs]
 
 
+def purge_old_offers(days: int = 30) -> None:
+    """Supprime les offres dont scanned_at est antérieur à `days` jours."""
+    from datetime import datetime, timedelta, timezone
+    threshold = datetime.now(timezone.utc) - timedelta(days=days)
+    db = get_client()
+    old_docs = db.collection("offers").where("scanned_at", "<", threshold).stream()
+    for doc in old_docs:
+        doc.reference.delete()
+
+
 def mark_offers_seen(offer_ids: list[str]) -> None:
     """Marque les offres comme vues."""
     from datetime import datetime, timezone

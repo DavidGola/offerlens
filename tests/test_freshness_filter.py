@@ -100,6 +100,7 @@ def test_scan_freshness_filters_before_scoring():
     with (
         patch("offerlens.sources.remotive.RemotiveAdapter") as MockAdapter,
         patch("offerlens.pipeline.scoring.score_offer") as mock_score,
+        patch("offerlens.storage.firestore.purge_old_offers"),
     ):
         MockAdapter.return_value.search.return_value = [stale]
         result = runner.invoke(app, ["scan", "--freshness", "24h"])
@@ -119,6 +120,7 @@ def test_scan_freshness_passes_fresh_offer_to_scoring():
     with (
         patch("offerlens.sources.remotive.RemotiveAdapter") as MockAdapter,
         patch("offerlens.pipeline.scoring.score_offer", return_value=mock_scored) as mock_score,
+        patch("offerlens.storage.firestore.purge_old_offers"),
     ):
         MockAdapter.return_value.search.return_value = [fresh]
         result = runner.invoke(app, ["scan", "--freshness", "24h"])
