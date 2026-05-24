@@ -34,6 +34,9 @@ def scan(
     from offerlens.sources.base import filter_by_freshness
     from offerlens.sources.remotive import RemotiveAdapter
     from offerlens.sources.url_fetch import URLFetchAdapter
+    from offerlens.storage.firestore import purge_old_offers
+
+    purge_old_offers()
 
     if url:
         with console.status(f"Récupération de l'offre depuis {url}..."):
