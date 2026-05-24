@@ -9,7 +9,11 @@ from offerlens.config import settings
 
 
 def get_chat_model():
-    return init_chat_model(settings.llm_model, model_provider=settings.llm_provider)
+    kwargs: dict = {}
+    if settings.llm_provider == "google_vertexai":
+        kwargs["project"] = settings.gcp_project_id
+        kwargs["location"] = settings.llm_location
+    return init_chat_model(settings.llm_model, model_provider=settings.llm_provider, **kwargs)
 
 
 class VertexEmbeddings(Embeddings):

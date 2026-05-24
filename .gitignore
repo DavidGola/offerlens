@@ -2,6 +2,7 @@
 .env
 *.json
 !pyproject.toml
+credentials.json
 
 # Python
 __pycache__/

@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # LLM
     llm_provider: str = "anthropic"
     llm_model: str = "claude-haiku-4-5-20251001"
+    llm_location: str = "us-central1"
     anthropic_api_key: str = ""
     openai_api_key: str = ""
 
