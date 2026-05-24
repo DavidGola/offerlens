@@ -34,6 +34,12 @@ def search_cv_chunks(query_embedding: list[float], limit: int = 5) -> list[str]:
     return [doc.to_dict().get("content", "") for doc in results]
 
 
+def offer_exists(source: str, url: str) -> bool:
+    """Retourne True si l'offre (source + url) est déjà en base."""
+    db = get_client()
+    return db.collection("offers").document(_offer_doc_id(source, url)).get().exists
+
+
 def save_scored_offer(offer_data: dict, source: str = "", url: str = "") -> str:
     """Persiste une offre scorée dans Firestore. Retourne l'ID du document.
 

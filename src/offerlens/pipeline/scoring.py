@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from offerlens.llm import get_chat_model, get_embeddings
 from offerlens.sources.base import RawOffer
-from offerlens.storage.firestore import save_scored_offer, search_cv_chunks
+from offerlens.storage.firestore import offer_exists, save_scored_offer, search_cv_chunks
 
 
 class JobScore(BaseModel):
@@ -50,7 +50,10 @@ def _build_offer_text(offer: RawOffer) -> str:
     return f"Titre : {offer.title}\nEntreprise : {offer.company}\nLocalisation : {offer.location}\n\n{offer.raw_content}"
 
 
-def score_offer(offer: RawOffer) -> ScoredOffer:
+def score_offer(offer: RawOffer) -> ScoredOffer | None:
+    if offer_exists(offer.source, offer.url):
+        return None
+
     offer_text = _build_offer_text(offer)
     llm = get_chat_model().with_structured_output(JobScore)
 

@@ -69,7 +69,8 @@ def _run_scan(
     for offer in offers:
         with console.status(f"Scoring : {offer.title[:50]}..."):
             result = score_offer(offer)
-        results.append(result)
+        if result is not None:
+            results.append(result)
 
     results.sort(key=lambda r: r.job_score.score, reverse=True)
 
