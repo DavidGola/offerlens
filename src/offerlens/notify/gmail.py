@@ -1,6 +1,7 @@
 """Gmail API — OAuth2 user-scoped + envoi du digest HTML top 5."""
 
 import base64
+import traceback
 from datetime import datetime, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -29,7 +30,9 @@ def _get_gmail_service():
             # Don't write back — token file may be read-only (Cloud Run secret mount).
             # refresh_token is stable; access token is refreshed in memory each run.
         else:
-            flow = InstalledAppFlow.from_client_secrets_file(str(_CREDENTIALS_FILE), _SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(
+                str(_CREDENTIALS_FILE), _SCOPES
+            )
             creds = flow.run_local_server(port=0)
             _TOKEN_FILE.write_text(creds.to_json())
     return build("gmail", "v1", credentials=creds)
@@ -38,7 +41,13 @@ def _get_gmail_service():
 def _build_html(offers: list[ScoredOffer], scan_date: str, total_today: int = 0) -> str:
     rows = ""
     for r in offers:
-        score_color = "#22c55e" if r.job_score.score >= 4 else "#eab308" if r.job_score.score >= 2 else "#ef4444"
+        score_color = (
+            "#22c55e"
+            if r.job_score.score >= 4
+            else "#eab308"
+            if r.job_score.score >= 2
+            else "#ef4444"
+        )
         skills = ", ".join(r.job_score.matched_skills[:4]) or "—"
         posted = r.offer.posted_at.strftime("%d/%m/%Y") if r.offer.posted_at else "N/A"
         rows += f"""
@@ -90,9 +99,30 @@ def send_digest(
     html = _build_html(top_offers, scan_date, total_today=total_today)
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"offerlens — {len(top_offers)} offres sur {total_today} scorées du {scan_date}"
+    msg["Subject"] = (
+        f"offerlens — {len(top_offers)} offres sur {total_today} scorées du {scan_date}"
+    )
     msg["To"] = recipient
     msg.attach(MIMEText(html, "html"))
+
+    service = _get_gmail_service()
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+    service.users().messages().send(userId="me", body={"raw": raw}).execute()
+
+
+def send_error_email(error: Exception, recipient: str | None = None) -> None:
+    recipient = recipient or settings.gmail_recipient
+    date = datetime.now(timezone.utc).strftime("%d/%m/%Y")
+    tb = (
+        traceback.format_exc()
+        if traceback.format_exc().strip() != "NoneType: None"
+        else traceback.format_exception(type(error), error, error.__traceback__)
+    )
+    body = "".join(tb) if isinstance(tb, list) else tb
+
+    msg = MIMEText(body, "plain")
+    msg["Subject"] = f"[offerlens] ERREUR pipeline — {date}"
+    msg["To"] = recipient
 
     service = _get_gmail_service()
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
