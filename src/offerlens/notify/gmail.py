@@ -21,14 +21,24 @@ _TOKEN_FILE = Path(settings.gmail_oauth_token_path or "token.json")
 
 
 def _get_gmail_service():
+    if settings.gmail_refresh_token and settings.gmail_client_id and settings.gmail_client_secret:
+        creds = Credentials(
+            token=None,
+            refresh_token=settings.gmail_refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=settings.gmail_client_id,
+            client_secret=settings.gmail_client_secret,
+            scopes=_SCOPES,
+        )
+        creds.refresh(Request())
+        return build("gmail", "v1", credentials=creds)
+
     creds = None
     if _TOKEN_FILE.exists():
         creds = Credentials.from_authorized_user_file(str(_TOKEN_FILE), _SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
-            # Don't write back — token file may be read-only (Cloud Run secret mount).
-            # refresh_token is stable; access token is refreshed in memory each run.
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
                 str(_CREDENTIALS_FILE), _SCOPES

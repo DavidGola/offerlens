@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     # Gmail
     gmail_recipient: str = ""
     gmail_oauth_token_path: str = ""
+    gmail_client_id: str = ""
+    gmail_client_secret: str = ""
+    gmail_refresh_token: str = ""
 
     # Firestore
     firestore_emulator_host: str = ""
