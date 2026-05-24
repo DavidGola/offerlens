@@ -35,11 +35,12 @@ def _get_gmail_service():
     return build("gmail", "v1", credentials=creds)
 
 
-def _build_html(offers: list[ScoredOffer], scan_date: str) -> str:
+def _build_html(offers: list[ScoredOffer], scan_date: str, total_today: int = 0) -> str:
     rows = ""
     for r in offers:
         score_color = "#22c55e" if r.job_score.score >= 4 else "#eab308" if r.job_score.score >= 2 else "#ef4444"
         skills = ", ".join(r.job_score.matched_skills[:4]) or "—"
+        posted = r.offer.posted_at.strftime("%d/%m/%Y") if r.offer.posted_at else "N/A"
         rows += f"""
         <tr>
           <td style="padding:12px;border-bottom:1px solid #e5e7eb;">
@@ -49,38 +50,47 @@ def _build_html(offers: list[ScoredOffer], scan_date: str) -> str:
           <td style="padding:12px;border-bottom:1px solid #e5e7eb;text-align:center;">
             <span style="font-size:1.5em;font-weight:bold;color:{score_color};">{r.job_score.score}/5</span>
           </td>
+          <td style="padding:12px;border-bottom:1px solid #e5e7eb;text-align:center;color:#6b7280;">
+            {posted}
+          </td>
           <td style="padding:12px;border-bottom:1px solid #e5e7eb;">
             <p style="margin:0 0 6px;">{r.job_score.explanation}</p>
             <small style="color:#6b7280;">✅ {skills}</small>
           </td>
         </tr>"""
 
+    total_line = f"{total_today} offres scorées aujourd'hui." if total_today else ""
     return f"""<!DOCTYPE html>
 <html><body style="font-family:sans-serif;max-width:800px;margin:0 auto;padding:20px;">
   <h1 style="color:#1e293b;">🔍 offerlens — {scan_date}</h1>
-  <p style="color:#6b7280;">Top {len(offers)} offres du jour, scorées contre ton CV.</p>
+  <p style="color:#6b7280;">Top {len(offers)} offres sur {total_today} scorées ce jour.</p>
   <table style="width:100%;border-collapse:collapse;">
     <thead>
       <tr style="background:#f8fafc;">
         <th style="padding:12px;text-align:left;">Offre</th>
         <th style="padding:12px;">Score</th>
+        <th style="padding:12px;">Publiée le</th>
         <th style="padding:12px;text-align:left;">Analyse</th>
       </tr>
     </thead>
     <tbody>{rows}</tbody>
   </table>
-  <p style="color:#9ca3af;font-size:0.8em;margin-top:24px;">offerlens · {scan_date}</p>
+  <p style="color:#9ca3af;font-size:0.8em;margin-top:24px;">offerlens · {scan_date} · {total_line}</p>
 </body></html>"""
 
 
-def send_digest(top_offers: list[ScoredOffer], recipient: str | None = None) -> None:
+def send_digest(
+    top_offers: list[ScoredOffer],
+    recipient: str | None = None,
+    total_today: int = 0,
+) -> None:
     recipient = recipient or settings.gmail_recipient
     scan_date = datetime.now(timezone.utc).strftime("%d/%m/%Y")
 
-    html = _build_html(top_offers, scan_date)
+    html = _build_html(top_offers, scan_date, total_today=total_today)
 
     msg = MIMEMultipart("alternative")
-    msg["Subject"] = f"offerlens — {len(top_offers)} offres du {scan_date}"
+    msg["Subject"] = f"offerlens — {len(top_offers)} offres sur {total_today} scorées du {scan_date}"
     msg["To"] = recipient
     msg.attach(MIMEText(html, "html"))
 
