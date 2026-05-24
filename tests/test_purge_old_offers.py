@@ -84,27 +84,34 @@ runner = CliRunner()
 
 def test_scan_calls_purge_before_scoring():
     """La commande scan appelle purge_old_offers avant de scorer les offres."""
+    from offerlens.pipeline.scoring import JobScore, ScoredOffer
+    from offerlens.sources.base import RawOffer
+
     call_order = []
 
     def fake_purge(days=30):
         call_order.append("purge")
 
-    mock_scored = MagicMock()
-    mock_scored.job_score.score = 3
-    mock_scored.offer.title = "Dev"
-    mock_scored.offer.company = "ACME"
-    mock_scored.job_score.matched_skills = []
+    offer = RawOffer(
+        source="test", url="https://x.com", title="Dev",
+        company="ACME", raw_content="Python", location="remote",
+    )
+    scored = ScoredOffer(
+        offer=offer,
+        job_score=JobScore(score=3, explanation="ok", matched_skills=[], missing_skills=[], red_flags=[]),
+    )
 
-    def fake_score(offer):
+    def fake_score_batch(offers):
         call_order.append("score")
-        return mock_scored
+        return [scored] if offers else []
 
     with (
-        patch("offerlens.sources.remotive.RemotiveAdapter") as MockAdapter,
-        patch("offerlens.pipeline.scoring.score_offer", side_effect=fake_score),
-        patch("offerlens.storage.firestore.purge_old_offers", side_effect=fake_purge),
+        patch("offerlens.pipeline.scan.get_sources", return_value=[MagicMock(search=MagicMock(return_value=[offer]))]),
+        patch("offerlens.pipeline.scoring.OfferScorer.score_batch", side_effect=fake_score_batch),
+        patch("offerlens.pipeline.scan.purge_old_offers", side_effect=fake_purge),
+        patch("offerlens.pipeline.scan.offer_exists", return_value=False),
+        patch("offerlens.pipeline.scan.save_scored_offer", return_value="id1"),
     ):
-        MockAdapter.return_value.search.return_value = [MagicMock(title="Dev")]
         runner.invoke(app, ["scan"])
 
     assert call_order[0] == "purge", "purge doit être appelé avant le scoring"

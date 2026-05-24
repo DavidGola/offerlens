@@ -3,7 +3,6 @@
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from offerlens.cli import app
@@ -19,15 +18,10 @@ def _make_scored(title: str = "Dev Python", posted_at: datetime | None = None) -
         posted_at=posted_at,
     )
     job_score = JobScore(score=4, explanation="ok", matched_skills=["Python"], missing_skills=[], red_flags=[])
-    return ScoredOffer(offer=offer, job_score=job_score)
+    return ScoredOffer(offer=offer, job_score=job_score, offer_id="abc")
 
 
 # ── count_today_offers ────────────────────────────────────────────────────────
-
-def test_count_today_offers_exists():
-    from offerlens.storage.firestore import count_today_offers
-    assert callable(count_today_offers)
-
 
 def test_count_today_offers_queries_today_range():
     """count_today_offers filtre sur scanned_at >= début de journée UTC."""
@@ -115,26 +109,14 @@ runner = CliRunner()
 
 def test_digest_cli_passes_total_today():
     """La commande digest récupère count_today_offers et le passe à send_digest."""
-    mock_offers = [
-        {
-            "id": "1", "source": "test", "url": "https://x.com",
-            "title": "Dev", "company": "ACME", "raw_content": "Python",
-            "location": "remote", "score": 5, "explanation": "ok",
-            "matched_skills": [], "missing_skills": [], "red_flags": [],
-            "posted_at": None,
-        }
-    ]
     with (
-        patch("offerlens.storage.firestore.get_top_offers", return_value=mock_offers),
+        patch("offerlens.storage.firestore.get_top_offers", return_value=[_make_scored()]),
         patch("offerlens.storage.firestore.count_today_offers", return_value=42),
         patch("offerlens.notify.gmail.send_digest") as mock_send,
     ):
         result = runner.invoke(app, ["digest"])
 
     assert result.exit_code == 0
-    _, kwargs = mock_send.call_args
-    total = kwargs.get("total_today") or mock_send.call_args.args[1] if len(mock_send.call_args.args) > 1 else None
-    # accept either positional or keyword
     call_args = mock_send.call_args
     passed_total = (
         call_args.kwargs.get("total_today")
@@ -145,19 +127,12 @@ def test_digest_cli_passes_total_today():
 
 
 def test_digest_cli_posted_at_propagated():
-    """posted_at Firestore est transmis au RawOffer reconstruit."""
+    """posted_at est transmis au RawOffer dans le ScoredOffer."""
     posted = datetime(2026, 5, 24, 8, 0, tzinfo=timezone.utc)
-    mock_offers = [
-        {
-            "id": "1", "source": "test", "url": "https://x.com",
-            "title": "Dev", "company": "ACME", "raw_content": "Python",
-            "location": "remote", "score": 5, "explanation": "ok",
-            "matched_skills": [], "missing_skills": [], "red_flags": [],
-            "posted_at": posted,
-        }
-    ]
+    scored = _make_scored(posted_at=posted)
+
     with (
-        patch("offerlens.storage.firestore.get_top_offers", return_value=mock_offers),
+        patch("offerlens.storage.firestore.get_top_offers", return_value=[scored]),
         patch("offerlens.storage.firestore.count_today_offers", return_value=1),
         patch("offerlens.notify.gmail.send_digest") as mock_send,
     ):

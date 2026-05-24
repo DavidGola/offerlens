@@ -94,38 +94,44 @@ runner = CliRunner()
 
 
 def test_scan_freshness_filters_before_scoring():
-    """--freshness filtre les offres périmées avant l'appel à score_offer."""
+    """--freshness filtre les offres périmées avant l'appel à score_batch."""
     stale = _offer(_now() - timedelta(days=5), title="Stale Offer")
     mock_adapter = MagicMock()
     mock_adapter.search.return_value = [stale]
 
     with (
-        patch("offerlens.sources.registry.get_sources", return_value=[mock_adapter]),
-        patch("offerlens.pipeline.scoring.score_offer") as mock_score,
-        patch("offerlens.storage.firestore.purge_old_offers"),
+        patch("offerlens.pipeline.scan.get_sources", return_value=[mock_adapter]),
+        patch("offerlens.pipeline.scoring.OfferScorer.score_batch", return_value=[]) as mock_batch,
+        patch("offerlens.pipeline.scan.purge_old_offers"),
+        patch("offerlens.pipeline.scan.offer_exists", return_value=False),
     ):
         result = runner.invoke(app, ["scan", "--freshness", "24h"])
 
-    mock_score.assert_not_called()
+    mock_batch.assert_called_once_with([])
     assert result.exit_code == 0
 
 
 def test_scan_freshness_passes_fresh_offer_to_scoring():
-    """--freshness laisse passer les offres récentes vers score_offer."""
+    """--freshness laisse passer les offres récentes vers score_batch."""
+    from offerlens.pipeline.scoring import JobScore, ScoredOffer
+
     fresh = _offer(_now() - timedelta(hours=2), title="Fresh Offer")
-    mock_scored = MagicMock()
-    mock_scored.job_score.score = 3
-    mock_scored.offer = fresh
-    mock_scored.job_score.matched_skills = []
+    scored = ScoredOffer(
+        offer=fresh,
+        job_score=JobScore(score=3, explanation="ok", matched_skills=[], missing_skills=[], red_flags=[]),
+    )
+
     mock_adapter = MagicMock()
     mock_adapter.search.return_value = [fresh]
 
     with (
-        patch("offerlens.sources.registry.get_sources", return_value=[mock_adapter]),
-        patch("offerlens.pipeline.scoring.score_offer", return_value=mock_scored) as mock_score,
-        patch("offerlens.storage.firestore.purge_old_offers"),
+        patch("offerlens.pipeline.scan.get_sources", return_value=[mock_adapter]),
+        patch("offerlens.pipeline.scoring.OfferScorer.score_batch", return_value=[scored]) as mock_batch,
+        patch("offerlens.pipeline.scan.purge_old_offers"),
+        patch("offerlens.pipeline.scan.offer_exists", return_value=False),
+        patch("offerlens.pipeline.scan.save_scored_offer", return_value="id1"),
     ):
         result = runner.invoke(app, ["scan", "--freshness", "24h"])
 
-    mock_score.assert_called_once_with(fresh)
+    mock_batch.assert_called_once_with([fresh])
     assert result.exit_code == 0

@@ -5,16 +5,26 @@ from unittest.mock import MagicMock, patch
 from typer.testing import CliRunner
 
 from offerlens.cli import app
+from offerlens.pipeline.scoring import JobScore, ScoredOffer
+from offerlens.sources.base import RawOffer
 
 
-# ── score_offer ne persiste plus seen_at ni status ───────────────────────────
+def _make_scored(title: str = "Dev") -> ScoredOffer:
+    offer = RawOffer(
+        source="test", url="https://x.com", title=title,
+        company="ACME", raw_content="Python", location="remote",
+    )
+    job_score = JobScore(score=5, explanation="ok", matched_skills=[], missing_skills=[], red_flags=[])
+    return ScoredOffer(offer=offer, job_score=job_score, offer_id="abc")
 
-def test_score_offer_does_not_persist_seen_at():
-    """save_scored_offer ne doit pas recevoir le champ seen_at."""
+
+# ── OfferScorer ne persiste pas ──────────────────────────────────────────────
+
+def test_scorer_does_not_persist():
+    """OfferScorer.score() retourne un ScoredOffer sans toucher Firestore."""
     from langchain_core.runnables import RunnableLambda
 
-    from offerlens.pipeline.scoring import JobScore, score_offer
-    from offerlens.sources.base import RawOffer
+    from offerlens.pipeline.scoring import OfferScorer
 
     offer = RawOffer(
         source="test", url="https://x.com", title="Dev",
@@ -22,17 +32,16 @@ def test_score_offer_does_not_persist_seen_at():
     )
     job_score = JobScore(score=4, explanation="ok", matched_skills=[], missing_skills=[], red_flags=[])
 
-    with (
-        patch("offerlens.pipeline.scoring.get_chat_model") as mock_llm,
-        patch("offerlens.pipeline.scoring._retrieve_cv_chunks", return_value="chunk"),
-        patch("offerlens.pipeline.scoring.save_scored_offer", return_value="id123") as mock_save,
-    ):
-        mock_llm.return_value.with_structured_output.return_value = RunnableLambda(lambda _: job_score)
-        score_offer(offer)
+    fake_llm = RunnableLambda(lambda _: job_score)
+    scorer = OfferScorer(
+        llm=MagicMock(with_structured_output=MagicMock(return_value=fake_llm)),
+        cv_retriever=lambda _: "chunk",
+    )
 
-    saved_data = mock_save.call_args[0][0]
-    assert "seen_at" not in saved_data
-    assert "status" not in saved_data
+    result = scorer.score(offer)
+
+    assert result.job_score.score == 4
+    assert result.offer_id == ""
 
 
 # ── mark_offers_seen n'existe plus ───────────────────────────────────────────
@@ -49,7 +58,12 @@ def test_get_top_offers_no_status_filter():
     """get_top_offers ne doit pas filtrer sur status ou seen_at."""
     mock_doc = MagicMock()
     mock_doc.id = "abc"
-    mock_doc.to_dict.return_value = {"score": 5, "title": "Dev"}
+    mock_doc.to_dict.return_value = {
+        "source": "test", "url": "https://x.com", "title": "Dev",
+        "company": "ACME", "raw_content": "Python", "location": "remote",
+        "score": 5, "explanation": "ok",
+        "matched_skills": [], "missing_skills": [], "red_flags": [],
+    }
 
     mock_query = MagicMock()
     mock_query.order_by.return_value.limit.return_value.get.return_value = [mock_doc]
@@ -60,7 +74,8 @@ def test_get_top_offers_no_status_filter():
         results = get_top_offers(limit=1)
 
     mock_query.where.assert_not_called()
-    assert results == [{"id": "abc", "score": 5, "title": "Dev"}]
+    assert len(results) == 1
+    assert results[0].job_score.score == 5
 
 
 # ── digest n'appelle plus mark_offers_seen ────────────────────────────────────
@@ -70,40 +85,22 @@ runner = CliRunner()
 
 def test_digest_does_not_call_mark_offers_seen():
     """La commande digest ne doit plus appeler mark_offers_seen."""
-    mock_offers = [
-        {
-            "id": "1", "source": "test", "url": "https://x.com",
-            "title": "Dev", "company": "ACME", "raw_content": "Python",
-            "location": "remote", "score": 5, "explanation": "ok",
-            "matched_skills": [], "missing_skills": [], "red_flags": [],
-        }
-    ]
     with (
-        patch("offerlens.storage.firestore.get_top_offers", return_value=mock_offers),
+        patch("offerlens.storage.firestore.get_top_offers", return_value=[_make_scored()]),
         patch("offerlens.storage.firestore.count_today_offers", return_value=1),
         patch("offerlens.notify.gmail.send_digest"),
         patch("offerlens.cli.mark_offers_seen", create=True) as mock_seen,
     ):
         result = runner.invoke(app, ["digest"])
 
-    # mark_offers_seen ne doit pas être appelé (ne doit plus exister dans le CLI)
     mock_seen.assert_not_called()
     assert result.exit_code == 0
 
 
 def test_digest_twice_returns_same_offers():
     """Exécuter digest deux fois de suite retourne les mêmes offres (stateless)."""
-    mock_offers = [
-        {
-            "id": "1", "source": "test", "url": "https://x.com",
-            "title": "Dev", "company": "ACME", "raw_content": "Python",
-            "location": "remote", "score": 5, "explanation": "ok",
-            "matched_skills": [], "missing_skills": [], "red_flags": [],
-        }
-    ]
-
     with (
-        patch("offerlens.storage.firestore.get_top_offers", return_value=mock_offers) as mock_get,
+        patch("offerlens.storage.firestore.get_top_offers", return_value=[_make_scored()]) as mock_get,
         patch("offerlens.storage.firestore.count_today_offers", return_value=1),
         patch("offerlens.notify.gmail.send_digest"),
     ):

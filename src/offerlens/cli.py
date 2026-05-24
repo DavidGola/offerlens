@@ -30,38 +30,20 @@ def _run_scan(
     freshness: Optional[str] = None,
 ) -> list[str]:
     """Scanne toutes les sources configurées et retourne les warnings."""
-    from offerlens.pipeline.scoring import score_offer
-    from offerlens.sources.base import dedup_offers, filter_by_freshness
-    from offerlens.sources.registry import get_sources
-    from offerlens.storage.firestore import purge_old_offers
+    from offerlens.pipeline.scan import ScanPipeline
+    from offerlens.pipeline.scoring import OfferScorer
 
-    purge_old_offers()
+    scorer = OfferScorer()
+    pipeline = ScanPipeline(scorer)
 
-    adapters = get_sources(source_filter=source)
-    all_offers = []
-    warnings: list[str] = []
-
-    for adapter in adapters:
-        name = adapter.__class__.__name__.replace("Adapter", "").lower()
-        try:
-            with console.status(f"Recherche {name} : '{query}' (limit={limit})..."):
-                offers = adapter.search(query, limit=limit)
-            all_offers.extend(offers)
-        except Exception as e:
-            console.print(f"[yellow]⚠ {name} indisponible : {e}[/yellow]")
-            warnings.append(f"{name} indisponible lors du scan ({type(e).__name__})")
-
-    all_offers = dedup_offers(all_offers)
-
-    if freshness:
-        try:
-            all_offers = filter_by_freshness(all_offers, freshness)
-        except ValueError as e:
-            console.print(f"[red]{e}[/red]")
-            raise typer.Exit(1)
-        console.print(
-            f"[dim]{len(all_offers)} offre(s) après filtre fraîcheur ({freshness}).[/dim]"
+    with console.status("Scan en cours..."):
+        result = pipeline.run(
+            query=query, limit=limit, source_filter=source, freshness=freshness
         )
+
+    console.print(f"[dim]Sources actives : {', '.join(result.source_names)}[/dim]")
+    for w in result.warnings:
+        console.print(f"[yellow]⚠ {w}[/yellow]")
 
     table = Table(title=f"Top offres — {source or 'toutes sources'}", show_lines=True)
     table.add_column("Score", justify="center", width=7)
@@ -70,66 +52,39 @@ def _run_scan(
     table.add_column("Source", width=14)
     table.add_column("Matched skills", min_width=30)
 
-    results = []
-    for offer in all_offers:
-        with console.status(f"Scoring : {offer.title[:50]}..."):
-            result = score_offer(offer)
-        if result is not None:
-            results.append(result)
-
-    results.sort(key=lambda r: r.job_score.score, reverse=True)
-
-    for result in results[:5]:
-        score = result.job_score.score
+    for r in sorted(result.scored, key=lambda x: x.job_score.score, reverse=True)[:10]:
+        score = r.job_score.score
         color = "green" if score >= 4 else "yellow" if score >= 2 else "red"
         table.add_row(
             f"[{color}]{score}/5[/{color}]",
-            result.offer.title,
-            result.offer.company,
-            result.offer.source,
-            ", ".join(result.job_score.matched_skills[:3]),
+            r.offer.title,
+            r.offer.company,
+            r.offer.source,
+            ", ".join(r.job_score.matched_skills[:3]),
         )
 
     console.print(table)
     console.print(
-        f"\n[dim]{len(results)} offres scorées, {len(results)} sauvegardées dans Firestore.[/dim]"
+        f"\n[dim]{len(result.scored)} offres scorées et sauvegardées dans Firestore.[/dim]"
     )
-    return warnings
+    return result.warnings
 
 
 def _run_digest(warnings: Optional[list[str]] = None) -> None:
     from offerlens.notify.gmail import send_digest
-    from offerlens.pipeline.scoring import JobScore, ScoredOffer
-    from offerlens.sources.base import RawOffer
+    from offerlens.sources.base import filter_contract_type
     from offerlens.storage.firestore import count_today_offers, get_top_offers
 
     with console.status("Récupération des meilleures offres..."):
-        raw_offers = get_top_offers(limit=5)
+        scored = get_top_offers(limit=20)
         total_today = count_today_offers()
 
-    if not raw_offers:
+    if not scored:
         console.print("[yellow]Aucune offre nouvelle à envoyer.[/yellow]")
         return
 
-    scored = []
-    for o in raw_offers:
-        offer = RawOffer(
-            source=o.get("source", ""),
-            url=o.get("url", ""),
-            title=o.get("title", ""),
-            company=o.get("company", ""),
-            raw_content=o.get("raw_content", ""),
-            location=o.get("location", ""),
-            posted_at=o.get("posted_at"),
-        )
-        job_score = JobScore(
-            score=o.get("score", 0),
-            explanation=o.get("explanation", ""),
-            matched_skills=o.get("matched_skills", []),
-            missing_skills=o.get("missing_skills", []),
-            red_flags=o.get("red_flags", []),
-        )
-        scored.append(ScoredOffer(offer=offer, job_score=job_score, offer_id=o["id"]))
+    kept_urls = {o.url for o in filter_contract_type([s.offer for s in scored])}
+    scored = [s for s in scored if s.offer.url in kept_urls][:10]
 
     with console.status("Envoi du digest Gmail..."):
         send_digest(scored, total_today=total_today, warnings=warnings or [])

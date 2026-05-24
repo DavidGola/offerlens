@@ -12,12 +12,6 @@ runner = CliRunner()
 # ── send_error_email ──────────────────────────────────────────────────────────
 
 
-def test_send_error_email_exists():
-    from offerlens.notify.gmail import send_error_email
-
-    assert callable(send_error_email)
-
-
 def test_send_error_email_subject_format():
     """Le sujet contient '[offerlens] ERREUR pipeline — ' et la date."""
     import base64
@@ -102,12 +96,6 @@ def test_send_error_email_is_plain_text():
 
 
 # ── run-pipeline CLI ──────────────────────────────────────────────────────────
-
-
-def test_run_pipeline_command_exists():
-    """La commande run-pipeline est enregistrée dans l'app Typer."""
-    result = runner.invoke(app, ["run-pipeline", "--help"])
-    assert result.exit_code == 0
 
 
 def test_run_pipeline_calls_scan_then_digest():

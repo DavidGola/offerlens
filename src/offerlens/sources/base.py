@@ -50,6 +50,18 @@ def dedup_offers(offers: list[RawOffer]) -> list[RawOffer]:
     return result
 
 
+_EXCLUDED_TITLE_KEYWORDS = {"stage", "alternance", "alternant", "stagiaire", "apprenti", "apprentissage", "intern", "internship"}
+
+
+def filter_contract_type(offers: list[RawOffer]) -> list[RawOffer]:
+    """Exclut les offres de stage et d'alternance détectées par mots-clés dans le titre."""
+    def _is_excluded(title: str) -> bool:
+        words = title.lower().split()
+        return any(w.strip("/-(),") in _EXCLUDED_TITLE_KEYWORDS for w in words)
+
+    return [o for o in offers if not _is_excluded(o.title)]
+
+
 @runtime_checkable
 class JobSourceAdapter(Protocol):
     def search(self, query: str, limit: int = 50) -> list[RawOffer]: ...

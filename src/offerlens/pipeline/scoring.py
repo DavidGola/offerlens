@@ -1,6 +1,8 @@
 """Pipeline LCEL de scoring — RawOffer → JobScore via RAG sur cv_chunks."""
 
-from datetime import datetime, timezone
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Callable
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
@@ -8,7 +10,10 @@ from pydantic import BaseModel
 
 from offerlens.llm import get_chat_model, get_embeddings
 from offerlens.sources.base import RawOffer
-from offerlens.storage.firestore import offer_exists, save_scored_offer, search_cv_chunks
+
+if TYPE_CHECKING:
+    from langchain_core.embeddings import Embeddings
+    from langchain_core.language_models import BaseChatModel
 
 
 class JobScore(BaseModel):
@@ -40,40 +45,51 @@ Voici des extraits du CV du candidat :
 ])
 
 
-def _retrieve_cv_chunks(offer_text: str) -> str:
-    embedding = get_embeddings().embed_query(offer_text)
-    chunks = search_cv_chunks(embedding, limit=5)
-    return "\n---\n".join(chunks)
-
-
 def _build_offer_text(offer: RawOffer) -> str:
     return f"Titre : {offer.title}\nEntreprise : {offer.company}\nLocalisation : {offer.location}\n\n{offer.raw_content}"
 
 
-def score_offer(offer: RawOffer) -> ScoredOffer | None:
-    if offer_exists(offer.source, offer.url):
-        return None
+class OfferScorer:
+    """Score des offres contre le CV via RAG + LLM. Injectable pour les tests."""
 
-    offer_text = _build_offer_text(offer)
-    llm = get_chat_model().with_structured_output(JobScore)
+    def __init__(
+        self,
+        *,
+        llm: BaseChatModel | None = None,
+        embeddings: Embeddings | None = None,
+        cv_retriever: Callable[[str], str] | None = None,
+        max_concurrency: int = 2,
+    ):
+        self._embeddings = embeddings or get_embeddings()
+        self._llm = (llm or get_chat_model()).with_structured_output(JobScore)
+        self._cv_retriever = cv_retriever or self._default_cv_retriever
+        self._max_concurrency = max_concurrency
+        self._chain = (
+            RunnablePassthrough.assign(cv_context=lambda x: self._cv_retriever(x["offer_text"]))
+            | _SCORING_PROMPT
+            | self._llm
+        )
 
-    chain = (
-        RunnablePassthrough.assign(cv_context=lambda x: _retrieve_cv_chunks(x["offer_text"]))
-        | _SCORING_PROMPT
-        | llm
-    )
+    def _default_cv_retriever(self, offer_text: str) -> str:
+        from offerlens.storage.firestore import search_cv_chunks
 
-    job_score: JobScore = chain.invoke({"offer_text": offer_text})
+        embedding = self._embeddings.embed_query(offer_text)
+        chunks = search_cv_chunks(embedding, limit=5)
+        return "\n---\n".join(chunks)
 
-    offer_data = {
-        **offer.model_dump(),
-        "score": job_score.score,
-        "explanation": job_score.explanation,
-        "matched_skills": job_score.matched_skills,
-        "missing_skills": job_score.missing_skills,
-        "red_flags": job_score.red_flags,
-        "scanned_at": datetime.now(timezone.utc),
-    }
-    offer_id = save_scored_offer(offer_data, source=offer.source, url=offer.url)
+    def score(self, offer: RawOffer) -> ScoredOffer:
+        offer_text = _build_offer_text(offer)
+        job_score: JobScore = self._chain.invoke({"offer_text": offer_text})
+        return ScoredOffer(offer=offer, job_score=job_score)
 
-    return ScoredOffer(offer=offer, job_score=job_score, offer_id=offer_id)
+    def score_batch(self, offers: list[RawOffer]) -> list[ScoredOffer]:
+        if not offers:
+            return []
+        inputs = [{"offer_text": _build_offer_text(o)} for o in offers]
+        job_scores: list[JobScore] = self._chain.batch(
+            inputs, config={"max_concurrency": self._max_concurrency}
+        )
+        return [
+            ScoredOffer(offer=offer, job_score=score)
+            for offer, score in zip(offers, job_scores)
+        ]

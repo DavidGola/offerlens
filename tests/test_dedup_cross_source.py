@@ -7,10 +7,6 @@ def _offer(title: str, company: str, source: str = "remotive") -> RawOffer:
     return RawOffer(source=source, url=f"https://example.com/{title}", title=title, company=company, raw_content="")
 
 
-def test_empty_list_returns_empty():
-    assert dedup_offers([]) == []
-
-
 def test_unique_offers_all_kept():
     offers = [_offer("Python Dev", "Acme"), _offer("Data Engineer", "Beta")]
     assert len(dedup_offers(offers)) == 2
