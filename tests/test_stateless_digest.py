@@ -80,6 +80,7 @@ def test_digest_does_not_call_mark_offers_seen():
     ]
     with (
         patch("offerlens.storage.firestore.get_top_offers", return_value=mock_offers),
+        patch("offerlens.storage.firestore.count_today_offers", return_value=1),
         patch("offerlens.notify.gmail.send_digest"),
         patch("offerlens.cli.mark_offers_seen", create=True) as mock_seen,
     ):
@@ -103,6 +104,7 @@ def test_digest_twice_returns_same_offers():
 
     with (
         patch("offerlens.storage.firestore.get_top_offers", return_value=mock_offers) as mock_get,
+        patch("offerlens.storage.firestore.count_today_offers", return_value=1),
         patch("offerlens.notify.gmail.send_digest"),
     ):
         runner.invoke(app, ["digest"])

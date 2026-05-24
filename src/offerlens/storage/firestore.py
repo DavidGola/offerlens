@@ -63,3 +63,19 @@ def mark_offers_seen(offer_ids: list[str]) -> None:
     db = get_client()
     for offer_id in offer_ids:
         db.collection("offers").document(offer_id).update({"seen_at": datetime.now(timezone.utc)})
+
+
+def count_today_offers() -> int:
+    """Compte les offres dont scanned_at est aujourd'hui (UTC)."""
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+    db = get_client()
+    docs = (
+        db.collection("offers")
+        .where("scanned_at", ">=", day_start)
+        .where("scanned_at", "<=", day_end)
+        .stream()
+    )
+    return sum(1 for _ in docs)

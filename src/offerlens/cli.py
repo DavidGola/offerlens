@@ -91,10 +91,11 @@ def digest():
     from offerlens.notify.gmail import send_digest
     from offerlens.pipeline.scoring import JobScore, ScoredOffer
     from offerlens.sources.base import RawOffer
-    from offerlens.storage.firestore import get_top_offers
+    from offerlens.storage.firestore import count_today_offers, get_top_offers
 
     with console.status("Récupération des meilleures offres..."):
         raw_offers = get_top_offers(limit=5)
+        total_today = count_today_offers()
 
     if not raw_offers:
         console.print("[yellow]Aucune offre nouvelle à envoyer.[/yellow]")
@@ -109,6 +110,7 @@ def digest():
             company=o.get("company", ""),
             raw_content=o.get("raw_content", ""),
             location=o.get("location", ""),
+            posted_at=o.get("posted_at"),
         )
         job_score = JobScore(
             score=o.get("score", 0),
@@ -120,9 +122,9 @@ def digest():
         scored.append(ScoredOffer(offer=offer, job_score=job_score, offer_id=o["id"]))
 
     with console.status("Envoi du digest Gmail..."):
-        send_digest(scored)
+        send_digest(scored, total_today=total_today)
 
-    console.print(f"[green]✓[/green] Digest envoyé — {len(scored)} offres.")
+    console.print(f"[green]✓[/green] Digest envoyé — {len(scored)} offres sur {total_today} scorées.")
 
 
 @app.command()
