@@ -27,9 +27,11 @@ def scan(
     query: Annotated[str, typer.Option(help="Requête de recherche")] = "python backend",
     limit: Annotated[int, typer.Option(help="Nombre max d'offres à scorer")] = 20,
     url: Annotated[Optional[str], typer.Option(help="URL unique à scorer (mode paste)")] = None,
+    freshness: Annotated[Optional[str], typer.Option(help="Fenêtre de fraîcheur : 24h, 7d, 30d")] = None,
 ):
     """Scanne et score des offres d'emploi."""
     from offerlens.pipeline.scoring import score_offer
+    from offerlens.sources.base import filter_by_freshness
     from offerlens.sources.remotive import RemotiveAdapter
     from offerlens.sources.url_fetch import URLFetchAdapter
 
@@ -43,6 +45,14 @@ def scan(
     else:
         console.print(f"[red]Source inconnue : {source}[/red]")
         raise typer.Exit(1)
+
+    if freshness:
+        try:
+            offers = filter_by_freshness(offers, freshness)
+        except ValueError as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
+        console.print(f"[dim]{len(offers)} offre(s) après filtre fraîcheur ({freshness}).[/dim]")
 
     table = Table(title=f"Top offres — {source}", show_lines=True)
     table.add_column("Score", justify="center", width=7)
