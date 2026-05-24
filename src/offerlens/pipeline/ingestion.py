@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from google.cloud import firestore
+from google.cloud.firestore_v1.vector import Vector
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pypdf import PdfReader
 
@@ -40,7 +41,7 @@ def ingest_cv(path: str | Path) -> int:
     for i, (chunk, vector) in enumerate(zip(chunks, vectors)):
         collection.document(f"chunk_{i:03d}").set({
             "content": chunk,
-            "embedding": vector,
+            "embedding": Vector(vector),
             "source": "cv",
             "index": i,
         })

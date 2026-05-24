@@ -5,6 +5,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
 
+import os
+os.environ.setdefault("USER_AGENT", "offerlens/0.1 (job-search-tool)")
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
