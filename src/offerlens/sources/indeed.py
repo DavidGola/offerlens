@@ -1,1 +1,0 @@
-"""Adapter Indeed MCP → RawOffer."""

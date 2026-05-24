@@ -41,5 +41,13 @@ class Settings(BaseSettings):
     # Firestore
     firestore_emulator_host: str = ""
 
+    # Adzuna
+    adzuna_app_id: str = ""
+    adzuna_api_key: str = ""
+
+    # France Travail
+    ft_client_id: str = ""
+    ft_client_secret: str = ""
+
 
 settings = Settings()

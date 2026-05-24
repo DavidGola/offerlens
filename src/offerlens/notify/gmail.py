@@ -48,7 +48,7 @@ def _get_gmail_service():
     return build("gmail", "v1", credentials=creds)
 
 
-def _build_html(offers: list[ScoredOffer], scan_date: str, total_today: int = 0) -> str:
+def _build_html(offers: list[ScoredOffer], scan_date: str, total_today: int = 0, warnings: list[str] | None = None) -> str:
     rows = ""
     for r in offers:
         score_color = (
@@ -78,10 +78,20 @@ def _build_html(offers: list[ScoredOffer], scan_date: str, total_today: int = 0)
           </td>
         </tr>"""
 
+    warning_banner = ""
+    if warnings:
+        items = "".join(f"<li>{w}</li>" for w in warnings)
+        warning_banner = f"""
+  <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:12px 16px;margin-bottom:16px;">
+    <strong style="color:#92400e;">⚠ Sources indisponibles lors de ce scan :</strong>
+    <ul style="margin:6px 0 0;color:#78350f;">{items}</ul>
+  </div>"""
+
     total_line = f"{total_today} offres scorées aujourd'hui." if total_today else ""
     return f"""<!DOCTYPE html>
 <html><body style="font-family:sans-serif;max-width:800px;margin:0 auto;padding:20px;">
   <h1 style="color:#1e293b;">🔍 offerlens — {scan_date}</h1>
+  {warning_banner}
   <p style="color:#6b7280;">Top {len(offers)} offres sur {total_today} scorées ce jour.</p>
   <table style="width:100%;border-collapse:collapse;">
     <thead>
@@ -102,11 +112,12 @@ def send_digest(
     top_offers: list[ScoredOffer],
     recipient: str | None = None,
     total_today: int = 0,
+    warnings: list[str] | None = None,
 ) -> None:
     recipient = recipient or settings.gmail_recipient
     scan_date = datetime.now(timezone.utc).strftime("%d/%m/%Y")
 
-    html = _build_html(top_offers, scan_date, total_today=total_today)
+    html = _build_html(top_offers, scan_date, total_today=total_today, warnings=warnings)
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = (
